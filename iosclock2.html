@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Stopwatch</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+body{
+  background:#000;
+  color:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
+  height:100vh;
+  overflow:hidden;
+  user-select:none;
+}
+
+.container{
+  max-width:430px;
+  margin:auto;
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+  padding:24px 20px 16px;
+}
+
+.header{
+  text-align:center;
+  margin-top:8px;
+}
+
+.lap-label{
+  color:#636366;
+  font-size:96px;
+  font-weight:200;
+  letter-spacing:-5px;
+  line-height:1;
+  margin-bottom:6px;
+}
+
+.main-time{
+  font-size:96px;
+  font-weight:200;
+  letter-spacing:-5px;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum";
+}
+
+.total-time{
+  color:#636366;
+  font-size:24px;
+  font-weight:300;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum";
+  margin-top:8px;
+  letter-spacing:-1px;
+  min-height:30px;
+}
+
+.buttons{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:36px;
+  margin-bottom:28px;
+  padding:0 8px;
+}
+
+.btn{
+  width:110px;
+  height:110px;
+  border-radius:50%;
+  border:none;
+  font-size:20px;
+  font-weight:400;
+  cursor:pointer;
+  letter-spacing:0.2px;
+  position:relative;
+  transition:transform 0.1s, opacity 0.1s;
+  -webkit-font-smoothing:antialiased;
+}
+
+.btn:active{
+  transform:scale(0.94);
+  opacity:0.85;
+}
+
+.btn-left{
+  background:#1c1c1e;
+  color:#fff;
+}
+
+.btn-left.lap{
+  background:#0a2e17;
+  color:#30d158;
+}
+
+.btn-right{
+  position:relative;
+}
+
+.btn-right.start{
+  background:#0a2e17;
+  color:#30d158;
+}
+
+.btn-right.stop{
+  background:#1e0808;
+  color:#c0392b;
+}
+
+.btn-ring{
+  position:absolute;
+  inset:-4px;
+  border-radius:50%;
+  pointer-events:none;
+  transition:border-color 0.3s;
+}
+
+.btn-right.start .btn-ring{border:3px solid #30d158}
+.btn-right.stop .btn-ring{border:3px solid #c0392b}
+
+.divider{
+  height:0.5px;
+  background:#1c1c1e;
+  margin:0 0 2px;
+}
+
+.laps{
+  flex:1;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+
+.laps::-webkit-scrollbar{display:none}
+
+.lap-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 2px;
+  border-bottom:0.5px solid #1c1c1e;
+  font-size:20px;
+  font-weight:300;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum";
+  letter-spacing:-0.5px;
+  animation:rowIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.lap-row .lap-name{
+  color:#ebebf5;
+  font-size:18px;
+}
+
+.lap-row .lap-val{
+  color:#ebebf5;
+  letter-spacing:-1px;
+}
+
+.lap-row.fastest .lap-name,
+.lap-row.fastest .lap-val{color:#30d158}
+
+.lap-row.slowest .lap-name,
+.lap-row.slowest .lap-val{color:#ff453a}
+
+@keyframes rowIn{
+  from{opacity:0;transform:translateY(-8px) scale(0.98)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+
+.pulse{
+  animation:pulse 0.15s ease-out;
+}
+
+@keyframes pulse{
+  0%{transform:scale(1)}
+  50%{transform:scale(0.97)}
+  100%{transform:scale(1)}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header">
+    <div class="lap-label" id="lapLabel">Lap 1</div>
+    <div class="main-time" id="lapTime">00:00</div>
+    <div class="total-time" id="totalTime">00:00</div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn btn-left" id="leftBtn">Reset</button>
+    <button class="btn btn-right start" id="rightBtn">
+      <span id="rightLabel">Start</span>
+      <div class="btn-ring"></div>
+    </button>
+  </div>
+
+  <div class="divider"></div>
+  <div class="laps" id="laps"></div>
+
+</div>
+
+<script>
+let running=false;
+let totalStart=0,lapStart=0;
+let totalElapsed=0,lapElapsed=0;
+let lapCount=1;
+let lapTimes=[];
+let raf=null;
+
+const lapTimeEl=document.getElementById('lapTime');
+const totalTimeEl=document.getElementById('totalTime');
+const lapLabelEl=document.getElementById('lapLabel');
+const leftBtn=document.getElementById('leftBtn');
+const rightBtn=document.getElementById('rightBtn');
+const rightLabel=document.getElementById('rightLabel');
+const lapsEl=document.getElementById('laps');
+
+function fmt(ms){
+  const s=Math.floor(ms/1000);
+  const m=Math.floor(s/60);
+  return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+
+function loop(){
+  if(!running) return;
+  const now=Date.now();
+  lapElapsed=now-lapStart;
+  totalElapsed=now-totalStart;
+  lapTimeEl.textContent=fmt(lapElapsed);
+  totalTimeEl.textContent=fmt(totalElapsed);
+  raf=requestAnimationFrame(loop);
+}
+
+function updateHighlights(){
+  if(lapTimes.length<2) return;
+  const min=Math.min(...lapTimes);
+  const max=Math.max(...lapTimes);
+  const rows=lapsEl.querySelectorAll('.lap-row');
+  rows.forEach((r,i)=>{
+    const idx=lapTimes.length-1-i;
+    r.classList.remove('fastest','slowest');
+    if(lapTimes[idx]===min) r.classList.add('fastest');
+    else if(lapTimes[idx]===max) r.classList.add('slowest');
+  });
+}
+
+function addLap(){
+  lapTimes.push(lapElapsed);
+
+  const row=document.createElement('div');
+  row.className='lap-row';
+  row.innerHTML=`<span class="lap-name">Lap ${lapCount}</span><span class="lap-val">${fmt(lapElapsed)}</span>`;
+  lapsEl.prepend(row);
+
+  lapCount++;
+  lapLabelEl.textContent=`Lap ${lapCount}`;
+  lapStart=Date.now();
+
+  updateHighlights();
+  lapTimeEl.classList.add('pulse');
+  setTimeout(()=>lapTimeEl.classList.remove('pulse'),200);
+}
+
+rightBtn.addEventListener('click',()=>{
+  if(!running){
+    running=true;
+    const now=Date.now();
+    totalStart=now-totalElapsed;
+    lapStart=now-lapElapsed;
+    rightLabel.textContent='Stop';
+    rightBtn.classList.replace('start','stop');
+    leftBtn.textContent='Lap';
+    leftBtn.classList.add('lap');
+    raf=requestAnimationFrame(loop);
+  } else {
+    running=false;
+    cancelAnimationFrame(raf);
+    rightLabel.textContent='Start';
+    rightBtn.classList.replace('stop','start');
+    leftBtn.textContent='Reset';
+    leftBtn.classList.remove('lap');
+  }
+});
+
+leftBtn.addEventListener('click',()=>{
+  if(running){
+    addLap();
+  } else {
+    totalElapsed=0;lapElapsed=0;lapCount=1;lapTimes=[];
+    lapLabelEl.textContent='Lap 1';
+    lapTimeEl.textContent='00:00';
+    totalTimeEl.textContent='00:00';
+    leftBtn.textContent='Reset';
+    leftBtn.classList.remove('lap');
+    lapsEl.innerHTML='';
+  }
+});
+</script>
+</body>
+</html>
